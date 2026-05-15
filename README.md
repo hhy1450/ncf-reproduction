@@ -1,61 +1,61 @@
-# NCF Reproduction
+# NCF 复现
 
-A PyTorch reproduction of **Neural Collaborative Filtering** (He et al., WWW 2017) on the MovieLens-1M dataset.
+**Neural Collaborative Filtering** (He et al., WWW 2017) 论文复现，基于 PyTorch，使用 MovieLens-1M 数据集。
 
-## Models
+## 模型简介
 
-| Model | Description |
-|-------|-------------|
-| **GMF** | Generalized Matrix Factorization — element-wise product of user/item embeddings |
-| **MLP** | Multi-Layer Perceptron — concatenated embeddings through stacked linear layers |
-| **NeuMF** | Neural Matrix Factorization — fusion of GMF and MLP branches, with optional pre-training |
+| 模型 | 说明 |
+|------|------|
+| **GMF** | 广义矩阵分解 — 用户/物品嵌入的逐元素乘积 |
+| **MLP** | 多层感知机 — 拼接嵌入后经过多层全连接网络 |
+| **NeuMF** | 神经矩阵分解 — GMF 与 MLP 分支融合，支持预训练 |
 
-## Quick Start
+## 快速开始
 
 ```bash
 pip install -r requirements.txt
 ```
 
-The MovieLens-1M dataset is downloaded automatically on first run.
+首次运行时会自动下载 MovieLens-1M 数据集。
 
-## Usage
+## 使用方法
 
 ```bash
-# Train GMF
+# 训练 GMF
 python main.py --model GMF
 
-# Train MLP
+# 训练 MLP
 python main.py --model MLP
 
-# Train NeuMF (random initialization)
+# 训练 NeuMF（随机初始化）
 python main.py --model NeuMF
 
-# Train NeuMF with pre-trained GMF + MLP
+# 训练 NeuMF（使用预训练的 GMF + MLP）
 python main.py --model NeuMF --pretrain
 ```
 
-### Key Arguments
+### 主要参数
 
-| Arg | Default | Description |
-|-----|---------|-------------|
-| `--model` | `GMF` | Model: `GMF`, `MLP`, or `NeuMF` |
-| `--epochs` | `20` | Number of training epochs |
-| `--batch_size` | `256` | Batch size |
-| `--lr` | `0.001` | Learning rate |
-| `--gmf_dim` | `8` | GMF embedding dimension |
-| `--mlp_dim` | `8` | MLP embedding dimension |
-| `--mlp_layers` | `32 16 8` | MLP hidden layer sizes (tower structure) |
-| `--pretrain` | `False` | Pre-train GMF and MLP before NeuMF |
-| `--alpha` | `0.5` | Fusion weight for pre-trained embeddings |
-| `--eval_k` | `10` | Top-K cutoff for HR and NDCG |
-| `--patience` | `5` | Early stopping patience |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--model` | `GMF` | 模型选择：`GMF`、`MLP`、`NeuMF` |
+| `--epochs` | `20` | 训练轮数 |
+| `--batch_size` | `256` | 批次大小 |
+| `--lr` | `0.001` | 学习率 |
+| `--gmf_dim` | `8` | GMF 嵌入维度 |
+| `--mlp_dim` | `8` | MLP 嵌入维度 |
+| `--mlp_layers` | `32 16 8` | MLP 隐藏层大小（塔式结构） |
+| `--pretrain` | `False` | 是否预训练 GMF 和 MLP |
+| `--alpha` | `0.5` | 预训练嵌入融合权重 |
+| `--eval_k` | `10` | Top-K 评估截断值 |
+| `--patience` | `5` | 早停耐心值 |
 
-## Evaluation
+## 评估指标
 
-Metrics reported: **HR@K** (Hit Ratio) and **NDCG@K** (Normalized Discounted Cumulative Gain).
+采用 **HR@K**（命中率）和 **NDCG@K**（归一化折损累计增益）。
 
-Leave-one-out split: latest interaction per user → test, second-latest → validation, rest → train. Negative sampling (4:1 ratio) for training; 99 random negatives per user for evaluation.
+数据划分采用 leave-one-out：每个用户最后一次交互作为测试集，倒数第二次作为验证集，其余作为训练集。训练时负采样比例为 4:1，评估时每个用户随机采样 99 个负样本。
 
-## Reference
+## 参考文献
 
 > He, X., Liao, L., Zhang, H., Nie, L., Hu, X., & Chua, T. S. (2017). Neural Collaborative Filtering. *WWW 2017*.
