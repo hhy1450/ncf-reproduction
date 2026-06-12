@@ -12,7 +12,7 @@ from recall.svd import SVDRecall
 from recall.nmf import NMFRecall
 from model import GMF, MLP, NeuMF
 from rank.wide_deep import WideAndDeep
-from train import train
+from train import train as train_fn
 from evaluate import evaluate
 from cold_start import ColdStartHandler
 
@@ -97,28 +97,28 @@ def run_comparison_experiment(dataset_name="movielens", epochs=10, device="cpu")
 
     # GMF
     gmf = GMF(nu, ni, embed_dim=8)
-    gmf_hr, gmf_ndcg, _ = train(gmf, users, items_, labels, val, test, user_items, ni,
+    gmf_hr, gmf_ndcg, _ = train_fn(gmf, users, items_, labels, val, test, user_items, ni,
                                   epochs=epochs, batch_size=256, lr=0.001,
                                   device=device, eval_k=10, early_stop_patience=5)
     results["GMF"] = {"HR@10": gmf_hr, "NDCG@10": gmf_ndcg}
 
     # MLP
     mlp = MLP(nu, ni, embed_dim=8, layers=[32, 16, 8])
-    mlp_hr, mlp_ndcg, _ = train(mlp, users, items_, labels, val, test, user_items, ni,
+    mlp_hr, mlp_ndcg, _ = train_fn(mlp, users, items_, labels, val, test, user_items, ni,
                                   epochs=epochs, batch_size=256, lr=0.001,
                                   device=device, eval_k=10, early_stop_patience=5)
     results["MLP"] = {"HR@10": mlp_hr, "NDCG@10": mlp_ndcg}
 
     # NeuMF
     neumf = NeuMF(nu, ni, gmf_dim=8, mlp_dim=8, mlp_layers=[32, 16, 8])
-    neumf_hr, neumf_ndcg, _ = train(neumf, users, items_, labels, val, test, user_items, ni,
+    neumf_hr, neumf_ndcg, _ = train_fn(neumf, users, items_, labels, val, test, user_items, ni,
                                       epochs=epochs, batch_size=256, lr=0.001,
                                       device=device, eval_k=10, early_stop_patience=5)
     results["NeuMF"] = {"HR@10": neumf_hr, "NDCG@10": neumf_ndcg}
 
     # Wide&Deep
     wd = WideAndDeep(nu, ni, embed_dim=16, mlp_layers=[64, 32])
-    wd_hr, wd_ndcg, _ = train(wd, users, items_, labels, val, test, user_items, ni,
+    wd_hr, wd_ndcg, _ = train_fn(wd, users, items_, labels, val, test, user_items, ni,
                                 epochs=epochs, batch_size=256, lr=0.001,
                                 device=device, eval_k=10, early_stop_patience=5)
     results["Wide&Deep"] = {"HR@10": wd_hr, "NDCG@10": wd_ndcg}

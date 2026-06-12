@@ -29,14 +29,14 @@ class SVDModel(nn.Module):
         i = self.item_embed(item)
         dot = (u * i).sum(dim=-1)
         bias = self.user_bias(user).squeeze(-1) + self.item_bias(item).squeeze(-1) + self.global_bias
-        return dot + bias
+        return torch.sigmoid(dot + bias)
 
 
 class SVDRecall(RecallBase):
-    """SVD-based recall using PyTorch."""
+    """SVD-based recall using PyTorch with BCE loss and negative sampling."""
 
-    def __init__(self, embed_dim=64, epochs=20, lr=0.005, batch_size=512,
-                 reg=0.02, device="cpu"):
+    def __init__(self, embed_dim=64, epochs=20, lr=0.001, batch_size=512,
+                 reg=0.0, device="cpu"):
         super().__init__(name="SVD")
         self.embed_dim = embed_dim
         self.epochs = epochs
@@ -53,41 +53,50 @@ class SVDRecall(RecallBase):
         self.model = SVDModel(num_users, num_items, self.embed_dim).to(self.device)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr,
                                       weight_decay=self.reg)
+        criterion = nn.BCELoss()
 
-        users, items = [], []
-        for uid, iids in train.items():
-            for iid in iids:
-                users.append(uid)
-                items.append(iid)
-        users = np.array(users, dtype=np.int64)
-        items = np.array(items, dtype=np.int64)
-        n = len(users)
+        # Build positive pairs + negative sampling (4 negs per positive)
+        user_items_set = {uid: set(items) for uid, items in train.items()}
+        users_list, items_list, labels_list = [], [], []
+        for uid, pos_items in train.items():
+            for pos in pos_items:
+                users_list.append(uid)
+                items_list.append(pos)
+                labels_list.append(1.0)
+                for _ in range(4):
+                    neg = np.random.randint(0, num_items)
+                    while neg in user_items_set[uid]:
+                        neg = np.random.randint(0, num_items)
+                    users_list.append(uid)
+                    items_list.append(neg)
+                    labels_list.append(0.0)
+
+        users_arr = np.array(users_list, dtype=np.int64)
+        items_arr = np.array(items_list, dtype=np.int64)
+        labels_arr = np.array(labels_list, dtype=np.float32)
+        n = len(users_arr)
 
         self.model.train()
         for epoch in range(self.epochs):
             indices = np.random.permutation(n)
-            total_loss = 0
+            total_loss, batches = 0, 0
             for start in range(0, n, self.batch_size):
                 end = min(start + self.batch_size, n)
                 idx = indices[start:end]
-                u = torch.tensor(users[idx], device=self.device)
-                i = torch.tensor(items[idx], device=self.device)
+                u = torch.tensor(users_arr[idx], device=self.device)
+                i = torch.tensor(items_arr[idx], device=self.device)
+                y = torch.tensor(labels_arr[idx], device=self.device)
 
-                pos_scores = self.model(u, i)
-                pos_loss = -torch.log(torch.sigmoid(pos_scores) + 1e-8).mean()
-
-                neg_items = torch.randint(0, num_items, (len(idx),), device=self.device)
-                neg_scores = self.model(u, neg_items)
-                neg_loss = -torch.log(1 - torch.sigmoid(neg_scores) + 1e-8).mean()
-
-                loss = pos_loss + neg_loss
+                preds = self.model(u, i)
+                loss = criterion(preds, y)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
+                batches += 1
 
             if (epoch + 1) % 5 == 0:
-                print(f"  SVD Epoch {epoch+1}/{self.epochs}, Loss: {total_loss:.4f}")
+                print(f"  SVD Epoch {epoch+1}/{self.epochs}, Loss: {total_loss/batches:.4f}")
 
         self.model.eval()
         with torch.no_grad():
@@ -101,7 +110,12 @@ class SVDRecall(RecallBase):
         with torch.no_grad():
             u_tensor = torch.tensor([user_id], device=self.device)
             u_vec = self.model.user_embed(u_tensor).cpu().numpy()
-            scores = (u_vec @ self.item_vectors.T).ravel()
+            u_bias = self.model.user_bias(u_tensor).cpu().item()
+            all_items = torch.arange(self.num_items, device=self.device)
+            i_vecs = self.model.item_embed(all_items).cpu().numpy()
+            i_biases = self.model.item_bias(all_items).cpu().numpy().ravel()
+            scores = (u_vec @ i_vecs.T).ravel() + u_bias + i_biases + self.model.global_bias.cpu().item()
+            scores = 1.0 / (1.0 + np.exp(-scores))  # sigmoid
         top_k = min(k, self.num_items)
         top_items = np.argpartition(-scores, min(top_k, len(scores) - 1))[:top_k]
         top_items = top_items[np.argsort(-scores[top_items])]
