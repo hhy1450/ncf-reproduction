@@ -15,10 +15,17 @@ class GradioApp:
 
     def __init__(self, pipeline: RecommendationPipeline = None,
                  cs_handler: ColdStartHandler = None,
-                 metrics_data: dict = None):
+                 metrics_data: dict = None,
+                 item_names: dict = None):
         self.pipeline = pipeline
         self.cs_handler = cs_handler
         self.metrics = metrics_data or {}
+        self.item_names = item_names or {}
+
+    def _item_name(self, iid):
+        """Return item name if available, otherwise item ID."""
+        name = self.item_names.get(iid)
+        return f"{name} (ID: {iid})" if name else f"物品 {iid}"
 
     def recommend_tab(self, user_id, top_k):
         """Tab 1: Get recommendations for a user."""
@@ -31,9 +38,9 @@ class GradioApp:
             items = result.get("items", [])
             if not items:
                 return "未找到推荐结果。"
-            lines = [f"### 为用户 {user_id} 推荐的 Top-{top_k} 物品\n"]
+            lines = [f"### 为用户 {user_id} 推荐的 Top-{top_k} 电影\n"]
             for rank, iid in enumerate(items, 1):
-                lines.append(f"{rank}. 物品 **{iid}**")
+                lines.append(f"{rank}. {self._item_name(iid)}")
             return "\n".join(lines)
         except Exception as e:
             return f"出错了: {e}"
@@ -80,7 +87,8 @@ class GradioApp:
                 recs = self.cs_handler.popular_recommend(k=10, diversity_weight=0.2)
             else:
                 recs = self.cs_handler.popular_recommend(k=10, diversity_weight=0.1)
-            return f"基于 {n} 条交互记录，推荐结果: {recs.tolist()}"
+            names = [self._item_name(iid) for iid in recs]
+            return f"基于 {n} 条交互记录，推荐结果：\n\n" + "\n".join(f"{i+1}. {n}" for i, n in enumerate(names))
         except Exception as e:
             return f"出错了: {e}"
 
@@ -120,6 +128,6 @@ class GradioApp:
         return demo
 
 
-def create_app(pipeline=None, cs_handler=None, metrics_data=None):
-    app = GradioApp(pipeline, cs_handler, metrics_data)
+def create_app(pipeline=None, cs_handler=None, metrics_data=None, item_names=None):
+    app = GradioApp(pipeline, cs_handler, metrics_data, item_names)
     return app.build()

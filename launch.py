@@ -25,6 +25,7 @@ def main():
     ds = MovieLensDataset()
     df = ds.load()
     train, val, test, nu, ni = ds.split(df)
+    item_names = ds.load_item_names()
     print(f"  用户: {nu}, 物品: {ni}, 训练交互: {sum(len(v) for v in train.values())}")
 
     # 2. 训练召回模型
@@ -58,7 +59,7 @@ def main():
     print("  浏览器打开后即可使用！")
     print("=" * 50)
 
-    demo = create_app(pipeline=pipeline, cs_handler=cs)
+    demo = create_app(pipeline=pipeline, cs_handler=cs, item_names=item_names)
     demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
 
 

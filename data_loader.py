@@ -328,6 +328,20 @@ class MovieLensDataset(BaseDataset):
         )
         return df[["user_id", "item_id", "timestamp"]]
 
+    def load_item_names(self) -> dict:
+        """Load item ID → name mapping from movies.dat."""
+        movies_path = os.path.join(self.data_dir, "ml-1m", "movies.dat")
+        if not os.path.exists(movies_path):
+            self.download()
+        movies = pd.read_csv(
+            movies_path,
+            sep="::",
+            engine="python",
+            names=["item_id", "title", "genres"],
+            encoding="latin-1",
+        )
+        return dict(zip(movies["item_id"], movies["title"]))
+
 
 class LastfmDataset(BaseDataset):
     """Last.fm music listening dataset (HetRec 2011)."""
