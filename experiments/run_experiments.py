@@ -134,22 +134,38 @@ def run_comparison_experiment(dataset_name="movielens", epochs=10, device="cpu")
 
 
 def run_cold_start_experiment(dataset_name="movielens", device="cpu"):
-    """Experiment 2: Cold-start analysis by user group."""
+    """Experiment 2: Cold-start analysis by simulating sparse users."""
     print(f"\n{'='*60}")
     print(f"Experiment 2: Cold-Start Analysis on {dataset_name}")
     print(f"{'='*60}\n")
 
-    train, val, test, user_items, nu, ni = prepare_data(dataset_name)
-    handler = ColdStartHandler(ni)
-    handler.compute_popularity(train)
+    train_full, val, test, user_items, nu, ni = prepare_data(dataset_name)
 
+    # Create artificial cold-start users by limiting interactions
+    cold_train = {}
+    cold_test = {}
+    for uid in train_full:
+        full_items = train_full[uid]
+        if len(full_items) <= 5:
+            n_keep = max(1, len(full_items) - 1)
+        else:
+            # Randomly assign user to a coldness level
+            n_keep = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.1, 0.15, 0.15, 0.15, 0.15, 0.3])
+            n_keep = min(n_keep, len(full_items) - 1)
+        cold_train[uid] = full_items[:n_keep] if n_keep > 0 else []
+        cold_test[uid] = test.get(uid, full_items[-1])
+
+    handler = ColdStartHandler(ni)
+    handler.compute_popularity(train_full)
+
+    # Evaluate popularity baseline by group
     sorted_pop = sorted(handler.item_popularity.items(), key=lambda x: -x[1])
     top_k_items = [iid for iid, _ in sorted_pop[:200]]
 
     def popular_recommend(uid, k):
         return top_k_items[:k]
 
-    results = handler.evaluate_groups(test, train, popular_recommend)
+    results = handler.evaluate_groups(cold_test, cold_train, popular_recommend)
 
     print(f"{'Group':<15} {'Users':<8} {'HR@10':<10} {'NDCG@10':<10}")
     print("-" * 43)
