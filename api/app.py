@@ -16,11 +16,13 @@ class GradioApp:
     def __init__(self, pipeline: RecommendationPipeline = None,
                  cs_handler: ColdStartHandler = None,
                  metrics_data: dict = None,
-                 item_names: dict = None):
+                 item_names: dict = None,
+                 train_data: dict = None):
         self.pipeline = pipeline
         self.cs_handler = cs_handler
         self.metrics = metrics_data or {}
         self.item_names = item_names or {}
+        self.train_data = train_data or {}
 
     def _item_name(self, iid):
         """Return item name if available, otherwise item ID."""
@@ -34,14 +36,34 @@ class GradioApp:
             top_k = int(top_k)
             if self.pipeline is None:
                 return "推荐管道未加载。"
+
+            # 用户历史
+            user_history = self.train_data.get(user_id, [])
+            if user_history:
+                history_lines = ["### 📖 该用户看过的电影\n"]
+                for iid in user_history[-10:]:  # 最近10部
+                    history_lines.append(f"- {self._item_name(iid)}")
+                history_text = "\n".join(history_lines) + "\n"
+            else:
+                history_text = "### 📖 该用户暂无历史记录（冷启动用户）\n"
+
+            # 推荐结果
             result = self.pipeline.recommend(user_id, top_n=top_k)
             items = result.get("items", [])
+            sources = result.get("sources", {})
+
             if not items:
-                return "未找到推荐结果。"
-            lines = [f"### 为用户 {user_id} 推荐的 Top-{top_k} 电影\n"]
+                return history_text + "\n未找到推荐结果。"
+
+            rec_lines = [f"### 🎯 推荐 Top-{top_k} 电影\n"]
+            rec_lines.append("*系统通过以下算法为你推荐：ItemCF（基于物品相似度）、SVD（矩阵分解）、NMF（非负矩阵分解）*\n")
             for rank, iid in enumerate(items, 1):
-                lines.append(f"{rank}. {self._item_name(iid)}")
-            return "\n".join(lines)
+                src_names = sources.get(iid, [])
+                src_str = " + ".join(src_names) if src_names else "融合"
+                rec_lines.append(f"{rank}. {self._item_name(iid)}  `← {src_str}`")
+
+            return history_text + "\n" + "\n".join(rec_lines)
+
         except Exception as e:
             return f"出错了: {e}"
 
@@ -83,24 +105,40 @@ class GradioApp:
             n = len(interactions)
             if n <= 1:
                 recs = self.cs_handler.popular_recommend(k=10, diversity_weight=0.5)
+                strategy = "极冷启动（≤1条交互）：热门推荐 + 高多样性"
             elif n <= 3:
                 recs = self.cs_handler.popular_recommend(k=10, diversity_weight=0.2)
+                strategy = "冷启动（2-3条交互）：热门推荐 + 低多样性"
             else:
                 recs = self.cs_handler.popular_recommend(k=10, diversity_weight=0.1)
-            names = [self._item_name(iid) for iid in recs]
-            return f"基于 {n} 条交互记录，推荐结果：\n\n" + "\n".join(f"{i+1}. {n}" for i, n in enumerate(names))
+                strategy = "温启动（4-5条交互）：热门推荐 + 最小随机"
+
+            input_items = [self._item_name(i) for i in interactions]
+            rec_items = [self._item_name(iid) for iid in recs]
+
+            lines = [
+                f"### ❄️ 冷启动推荐\n",
+                f"**策略**: {strategy}",
+                f"**你输入的物品**: {', '.join(input_items)}",
+                f"\n**推荐结果**:\n",
+            ]
+            for i, name in enumerate(rec_items, 1):
+                lines.append(f"{i}. {name}")
+
+            return "\n".join(lines)
+
         except Exception as e:
             return f"出错了: {e}"
 
     def build(self):
         with gr.Blocks(title="个性化推荐系统演示") as demo:
             gr.Markdown("# 个性化推荐系统")
-            gr.Markdown("两阶段架构：召回 → 排序 → Top-N 推荐")
+            gr.Markdown("两阶段架构：多路召回（ItemCF + SVD + NMF）→ 融合排序 → Top-N 推荐")
 
             with gr.Tab("🎯 Top-N 推荐"):
-                gr.Markdown("输入用户ID，获取个性化推荐结果")
+                gr.Markdown("输入用户ID，系统基于该用户的**历史观影记录**，通过三路召回算法生成个性化推荐。")
                 with gr.Row():
-                    user_input = gr.Textbox(label="用户ID", value="0")
+                    user_input = gr.Textbox(label="用户ID (0-6039)", value="0")
                     k_input = gr.Slider(label="推荐数量", minimum=5, maximum=50, value=10, step=5)
                 btn = gr.Button("获取推荐", variant="primary")
                 output = gr.Markdown()
@@ -116,7 +154,7 @@ class GradioApp:
                     gr.Markdown("*请先运行实验脚本获取指标数据*")
 
             with gr.Tab("❄️ 冷启动测试"):
-                gr.Markdown("模拟新用户场景：输入少量已交互物品ID")
+                gr.Markdown("模拟新用户场景：输入 1-3 个已交互物品ID，系统自动判断冷启动等级并生成推荐。")
                 with gr.Row():
                     i1 = gr.Textbox(label="已交互物品1")
                     i2 = gr.Textbox(label="已交互物品2")
@@ -128,6 +166,6 @@ class GradioApp:
         return demo
 
 
-def create_app(pipeline=None, cs_handler=None, metrics_data=None, item_names=None):
-    app = GradioApp(pipeline, cs_handler, metrics_data, item_names)
+def create_app(pipeline=None, cs_handler=None, metrics_data=None, item_names=None, train_data=None):
+    app = GradioApp(pipeline, cs_handler, metrics_data, item_names, train_data)
     return app.build()

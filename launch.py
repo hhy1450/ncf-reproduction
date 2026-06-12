@@ -59,7 +59,12 @@ def main():
     print("  浏览器打开后即可使用！")
     print("=" * 50)
 
-    demo = create_app(pipeline=pipeline, cs_handler=cs, item_names=item_names)
+    demo = create_app(
+        pipeline=pipeline,
+        cs_handler=cs,
+        item_names=item_names,
+        train_data=train,
+    )
     demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
 
 
