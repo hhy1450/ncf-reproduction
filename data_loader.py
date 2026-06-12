@@ -3,6 +3,101 @@ import pandas as pd
 import os
 import urllib.request
 import zipfile
+from abc import ABC, abstractmethod
+
+
+# ──────────────────────────────────────────────────
+#  BaseDataset: abstract base class for all datasets
+# ──────────────────────────────────────────────────
+
+class BaseDataset(ABC):
+    """Abstract dataset with download / load / split / negative sampling.
+
+    Subclasses must implement ``download()`` and ``load_raw()``.
+    """
+
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        os.makedirs(self.data_dir, exist_ok=True)
+
+    @abstractmethod
+    def download(self):
+        """Download and extract the dataset to ``self.data_dir``."""
+        ...
+
+    @abstractmethod
+    def load_raw(self) -> pd.DataFrame:
+        """Read raw files and return a DataFrame with columns
+        [user_id, item_id, timestamp].
+        """
+        ...
+
+    def load(self) -> pd.DataFrame:
+        """Download (if needed) then load raw interactions."""
+        self.download()
+        return self.load_raw()
+
+    def split(self, df):
+        """Leave-one-out split.
+
+        Returns:
+            train, val, test, num_users, num_items
+        """
+        return leave_one_out_split(df)
+
+    @staticmethod
+    def build_user_items(train):
+        """Convert train dict (list values) to a dict of sets (for O(1) lookup).
+
+        Args:
+            train: dict {user_id: list_of_item_ids}
+
+        Returns:
+            dict {user_id: set_of_item_ids}
+        """
+        return {uid: set(items) for uid, items in train.items()}
+
+    def neg_sample(self, train, num_items, num_neg=4):
+        """Wrap ``negative_sampling``."""
+        return negative_sampling(train, num_items, num_neg)
+
+    def hard_neg_sample(self, model, train, num_items, num_neg, sample_pool, device):
+        """Placeholder — wraps ``hard_negative_sampling`` (added in Task 1.3)."""
+        # Import here so the module still works before Task 1.3 is done.
+        try:
+            from data_loader import hard_negative_sampling
+        except ImportError:
+            raise NotImplementedError(
+                "hard_negative_sampling is not yet implemented (Task 1.3)."
+            )
+        return hard_negative_sampling(
+            model, train, num_items, num_neg, sample_pool, device
+        )
+
+    @staticmethod
+    def cold_start_split(train, threshold=5):
+        """Split users into cold-start (few interactions) and warm.
+
+        Args:
+            train: dict {user_id: list_of_item_ids}
+            threshold: minimum number of interactions to be "warm"
+
+        Returns:
+            cold_users: list of user ids with < threshold interactions
+            warm_users: list of user ids with >= threshold interactions
+        """
+        cold_users, warm_users = [], []
+        for uid, items in train.items():
+            if len(items) < threshold:
+                cold_users.append(uid)
+            else:
+                warm_users.append(uid)
+        return cold_users, warm_users
+
+
+# ──────────────────────────────────────────────────
+#  Module-level helpers (preserved for backward compat)
+# ──────────────────────────────────────────────────
 
 DATA_URL = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -144,3 +239,47 @@ def batch_generator(users, items, labels, batch_size=256, shuffle=True):
         end = min(start + batch_size, n)
         idx = indices[start:end]
         yield users[idx], items[idx], labels[idx]
+
+
+# ──────────────────────────────────────────────────
+#  Concrete dataset implementations
+# ──────────────────────────────────────────────────
+
+class MovieLensDataset(BaseDataset):
+    """MovieLens-1M dataset wrapper.
+
+    Usage::
+
+        ds = MovieLensDataset("data")
+        df = ds.load()
+        train, val, test, num_users, num_items = ds.split(df)
+        train_ui = ds.build_user_items(train)
+        users, items, labels = ds.neg_sample(train, num_items, num_neg=4)
+    """
+
+    DATA_URL = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
+
+    def download(self):
+        """Download and extract ml-1m.zip into ``self.data_dir``."""
+        zip_path = os.path.join(self.data_dir, "ml-1m.zip")
+        extract_dir = os.path.join(self.data_dir, "ml-1m")
+        if os.path.exists(os.path.join(extract_dir, "ratings.dat")):
+            return
+        os.makedirs(self.data_dir, exist_ok=True)
+        if not os.path.exists(zip_path):
+            print("Downloading MovieLens-1M...")
+            urllib.request.urlretrieve(self.DATA_URL, zip_path)
+        print("Extracting...")
+        with zipfile.ZipFile(zip_path, "r") as f:
+            f.extractall(self.data_dir)
+
+    def load_raw(self) -> pd.DataFrame:
+        """Read ratings.dat → DataFrame with [user_id, item_id, timestamp]."""
+        ratings_path = os.path.join(self.data_dir, "ml-1m", "ratings.dat")
+        df = pd.read_csv(
+            ratings_path,
+            sep="::",
+            engine="python",
+            names=["user_id", "item_id", "rating", "timestamp"],
+        )
+        return df[["user_id", "item_id", "timestamp"]]
