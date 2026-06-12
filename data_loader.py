@@ -62,14 +62,7 @@ class BaseDataset(ABC):
         return negative_sampling(train, num_items, num_neg)
 
     def hard_neg_sample(self, model, train, num_items, num_neg, sample_pool, device):
-        """Placeholder — wraps ``hard_negative_sampling`` (added in Task 1.3)."""
-        # Import here so the module still works before Task 1.3 is done.
-        try:
-            from data_loader import hard_negative_sampling
-        except ImportError:
-            raise NotImplementedError(
-                "hard_negative_sampling is not yet implemented (Task 1.3)."
-            )
+        """Wrap ``hard_negative_sampling``."""
         return hard_negative_sampling(
             model, train, num_items, num_neg, sample_pool, device
         )
@@ -239,6 +232,55 @@ def batch_generator(users, items, labels, batch_size=256, shuffle=True):
         end = min(start + batch_size, n)
         idx = indices[start:end]
         yield users[idx], items[idx], labels[idx]
+
+
+def hard_negative_sampling(model, user_items, num_items, num_neg=4,
+                           sample_pool=100, device="cpu"):
+    """Hard negative sampling: for each positive, sample `sample_pool` random
+    negatives, score them with the model, and keep the top `num_neg` highest-scoring.
+
+    This forces the model to learn harder decision boundaries.
+    """
+    import torch
+
+    model.eval()
+    model = model.to(device)
+    users_list, items_list, labels_list = [], [], []
+
+    with torch.no_grad():
+        for uid, pos_items in user_items.items():
+            for pos in pos_items:
+                # Positive sample
+                users_list.append(uid)
+                items_list.append(pos)
+                labels_list.append(1)
+
+                # Candidate negatives (exclude known positives)
+                cands = set()
+                while len(cands) < sample_pool:
+                    neg = np.random.randint(0, num_items)
+                    if neg not in user_items[uid] and neg not in cands:
+                        cands.add(neg)
+                cands = list(cands)
+
+                # Score candidates
+                u_tensor = torch.tensor([uid] * len(cands), device=device)
+                i_tensor = torch.tensor(cands, device=device)
+                scores = model(u_tensor, i_tensor)
+
+                # Keep top num_neg hardest (highest scoring = hardest negative)
+                _, top_idx = torch.topk(scores, min(num_neg, len(cands)))
+                for idx in top_idx:
+                    users_list.append(uid)
+                    items_list.append(cands[idx.item()])
+                    labels_list.append(0)
+
+    model.train()
+    return (
+        np.array(users_list, dtype=np.int64),
+        np.array(items_list, dtype=np.int64),
+        np.array(labels_list, dtype=np.float32),
+    )
 
 
 # ──────────────────────────────────────────────────
