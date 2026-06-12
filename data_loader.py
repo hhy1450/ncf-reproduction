@@ -283,3 +283,36 @@ class MovieLensDataset(BaseDataset):
             names=["user_id", "item_id", "rating", "timestamp"],
         )
         return df[["user_id", "item_id", "timestamp"]]
+
+
+class LastfmDataset(BaseDataset):
+    """Last.fm music listening dataset (HetRec 2011)."""
+
+    DATA_URL = "https://files.grouplens.org/datasets/hetrec2011/hetrec2011-lastfm-2k.zip"
+
+    def __init__(self, data_dir=None):
+        if data_dir is None:
+            data_dir = os.path.join(os.path.dirname(__file__), "data")
+        super().__init__(data_dir)
+
+    def download(self):
+        import urllib.request, zipfile
+        zip_path = os.path.join(self.data_dir, "lastfm-2k.zip")
+        os.makedirs(self.data_dir, exist_ok=True)
+        if os.path.exists(os.path.join(self.data_dir, "user_artists.dat")):
+            return
+        if not os.path.exists(zip_path):
+            print("Downloading Last.fm dataset...")
+            urllib.request.urlretrieve(self.DATA_URL, zip_path)
+        print("Extracting...")
+        with zipfile.ZipFile(zip_path, "r") as f:
+            f.extractall(self.data_dir)
+
+    def load_raw(self):
+        import pandas as pd
+        path = os.path.join(self.data_dir, "user_artists.dat")
+        df = pd.read_csv(path, sep="\t")
+        df = df.rename(columns={"userID": "user_id", "artistID": "item_id", "weight": "play_count"})
+        df = df.sort_values(["user_id", "play_count"], ascending=[True, False])
+        df["timestamp"] = df.groupby("user_id").cumcount()
+        return df[["user_id", "item_id", "timestamp"]]
