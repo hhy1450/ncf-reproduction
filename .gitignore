@@ -5,3 +5,5 @@ data/
 *.pyo
 .env
 .superpowers/
+app_state.pkl
+ranker_*.pt
